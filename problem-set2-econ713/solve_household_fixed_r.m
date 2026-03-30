@@ -1,4 +1,4 @@
-function [V, g, stats] = solve_household_fixed_r(A, y, Pi, beta, sigma, r, phi, tol, max_iter, print_every)
+function [V, g, stats] = solve_household_fixed_r(A, y, Pi, beta, sigma, r, phi, tol, max_iter, print_every, V_init)
 % solve_household_fixed_r.m
 % Solves the household Bellman problem in Huggett (1993) for a fixed interest rate.
 %
@@ -12,6 +12,7 @@ function [V, g, stats] = solve_household_fixed_r(A, y, Pi, beta, sigma, r, phi, 
 %   tol        - VFI sup norm tolerance
 %   max_iter   - max number of VFI iterations
 %   print_every- print diagnostics every print_every iterations
+%   V_init     - optional initial guess for value function, size (N_a x N_y)
 %
 % Outputs:
 %   V          - converged value function, size (N_a x N_y)
@@ -21,7 +22,12 @@ function [V, g, stats] = solve_household_fixed_r(A, y, Pi, beta, sigma, r, phi, 
 N_a = length(A);
 N_y = length(y);
 
-V = zeros(N_a, N_y);      % Initial guess: transparent and simple
+if nargin < 11 || isempty(V_init)
+    V = zeros(N_a, N_y);  % Default initial guess
+else
+    V = V_init;           % Warm start for nearby interest rates/counterfactuals
+end
+
 V_new = zeros(N_a, N_y);
 g = zeros(N_a, N_y);
 
