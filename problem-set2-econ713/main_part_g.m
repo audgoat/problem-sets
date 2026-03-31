@@ -35,8 +35,8 @@ for iy = 1:N_y
     a_state(idx1:idx2) = A;
 end
 
-q25 = weighted_quantile(a_state, psi_vec', 0.25);
-q75 = weighted_quantile(a_state, psi_vec', 0.75);
+q25 = weighted_quantile(a_state, psi_vec, 0.25);
+q75 = weighted_quantile(a_state, psi_vec, 0.75);
 
 % Operational definition:
 % - bottom quartile initial states: all (a,y) with a <= q25
@@ -102,4 +102,3 @@ fprintf('\nPart (g) complete.\n');
 fprintf('Weighted quartiles from stationary distribution:\n');
 fprintf('  Q25 = %.4f, Q75 = %.4f\n', q25, q75);
 fprintf('Saved figure: part_g_paths_and_expected_trajectories.png\n');
-
