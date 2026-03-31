@@ -9,9 +9,13 @@ end
 edges = linspace(0, 1.2, 50);
 centers = 0.5 * (edges(1:end-1) + edges(2:end));
 
-h1 = histcounts(mpc1, edges, 'Normalization', 'probability', 'Weights', w1);
-h2 = histcounts(mpc2, edges, 'Normalization', 'probability', 'Weights', w2);
-h3 = histcounts(mpc3, edges, 'Normalization', 'probability', 'Weights', w3);
+% Weighted histogram masses computed manually for compatibility:
+% 1) assign bins with discretize
+% 2) sum stationary weights in each bin
+% 3) normalize masses to sum to 1
+h1 = weighted_bin_masses(mpc1, w1, edges);
+h2 = weighted_bin_masses(mpc2, w2, edges);
+h3 = weighted_bin_masses(mpc3, w3, edges);
 
 fig = figure('Color', 'w');
 hold on;
@@ -32,5 +36,39 @@ hold off;
 
 saveas(fig, fullfile(save_dir, 'mpc_distribution_comparison.png'));
 saveas(fig, fullfile(save_dir, 'mpc_distribution_comparison.pdf'));
+
+end
+
+function h = weighted_bin_masses(x, w, edges)
+% weighted_bin_masses
+% Returns normalized weighted masses across bins defined by edges.
+% NaN observations (in x or w) are safely ignored.
+
+x = x(:);
+w = w(:);
+n_bins = length(edges) - 1;
+h = zeros(1, n_bins);
+
+valid = ~isnan(x) & ~isnan(w);
+x = x(valid);
+w = w(valid);
+
+if isempty(x)
+    return;
+end
+
+bin_idx = discretize(x, edges);
+
+for b = 1:n_bins
+    in_bin = (bin_idx == b);
+    if any(in_bin)
+        h(b) = sum(w(in_bin));
+    end
+end
+
+mass = sum(h);
+if mass > 0
+    h = h / mass;
+end
 
 end
