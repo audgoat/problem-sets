@@ -19,55 +19,115 @@ initial_r_low = r_low;
 initial_r_high = r_high;
 
 % ---------------------------------------------------------------------
-% 1) Pre-bisection scan on an annual-rate grid to detect a sign change.
+% 1) Pre-bisection scan(s) on annual-rate grids to detect a sign change.
+%    If needed, expand lower bound as requested:
+%      first [-5%, 4%], then [-10%, 4%] (annualized).
 % ---------------------------------------------------------------------
 n_scan = 21;
-r_scan = linspace(r_low, r_high, n_scan)';
-A_scan = zeros(n_scan, 1);
-r_model_scan = zeros(n_scan, 1);
-r_gross_scan = zeros(n_scan, 1);
+scan_bounds = [r_low, r_high];
+scan_labels = {'Initial scan interval'};
 
-fprintf('\nPre-bisection diagnostics on candidate annual rates:\n');
-fprintf('%12s %16s %16s %18s\n', 'r_annual(%)', 'r_model(net)', 'R_model(gross)', 'A(r)');
-
-V_guess = [];
-for i = 1:n_scan
-    [res_i, V_guess] = evaluate_rate(r_scan(i), params, V_guess);
-    A_scan(i) = res_i.agg_assets_policy;
-    r_model_scan(i) = res_i.r_model;
-    r_gross_scan(i) = 1 + res_i.r_model;
-
-    fprintf('%12.6f %16.8f %16.8f %18+.6e\n', ...
-        100 * r_scan(i), r_model_scan(i), r_gross_scan(i), A_scan(i));
+if r_low > -0.05
+    scan_bounds = [scan_bounds; -0.05, r_high];
+    scan_labels{end + 1} = 'Rescan interval (expanded lower bound)';
+end
+if r_low > -0.10
+    scan_bounds = [scan_bounds; -0.10, r_high];
+    scan_labels{end + 1} = 'Rescan interval (further expanded lower bound)';
 end
 
-% 2) Automatically search adjacent points with sign change.
 left_idx = [];
 right_idx = [];
-for i = 1:(n_scan - 1)
-    f_i = A_scan(i);
-    f_ip1 = A_scan(i + 1);
+sign_change_found = false;
+scan_used = struct();
+history.scan_attempts = cell(size(scan_bounds, 1), 1);
 
-    if f_i == 0
-        left_idx = i;
-        right_idx = i;
-        break;
+V_guess = [];
+for iscan = 1:size(scan_bounds, 1)
+    r_scan_low = scan_bounds(iscan, 1);
+    r_scan_high = scan_bounds(iscan, 2);
+
+    % Skip redundant scans if interval did not actually expand.
+    if iscan > 1 && abs(r_scan_low - scan_bounds(iscan - 1, 1)) < 1e-14
+        continue;
     end
 
-    if f_i * f_ip1 < 0 || f_ip1 == 0
-        left_idx = i;
-        right_idx = i + 1;
+    fprintf('\n%s: [%.4f%%, %.4f%%] annualized\n', scan_labels{iscan}, 100 * r_scan_low, 100 * r_scan_high);
+    fprintf('Pre-bisection diagnostics on candidate annual rates:\n');
+    fprintf('%12s %16s %16s %18s\n', 'r_annual(%)', 'r_model(net)', 'R_model(gross)', 'A(r)');
+
+    r_scan = linspace(r_scan_low, r_scan_high, n_scan)';
+    A_scan = zeros(n_scan, 1);
+    r_model_scan = zeros(n_scan, 1);
+    r_gross_scan = zeros(n_scan, 1);
+
+    for i = 1:n_scan
+        [res_i, V_guess] = evaluate_rate(r_scan(i), params, V_guess);
+        A_scan(i) = res_i.agg_assets_policy;
+        r_model_scan(i) = res_i.r_model;
+        r_gross_scan(i) = 1 + res_i.r_model;
+
+        fprintf('%12.6f %16.8f %16.8f %18+.6e\n', ...
+            100 * r_scan(i), r_model_scan(i), r_gross_scan(i), A_scan(i));
+    end
+
+    % Store each scan attempt in history.
+    scan_info = struct();
+    scan_info.r_annual = r_scan;
+    scan_info.r_model_net = r_model_scan;
+    scan_info.R_model_gross = r_gross_scan;
+    scan_info.asset_demand = A_scan;
+    scan_info.interval = [r_scan_low, r_scan_high];
+    history.scan_attempts{iscan} = scan_info;
+
+    % Search adjacent points for sign change.
+    left_idx = [];
+    right_idx = [];
+    for i = 1:(n_scan - 1)
+        f_i = A_scan(i);
+        f_ip1 = A_scan(i + 1);
+
+        if f_i == 0
+            left_idx = i;
+            right_idx = i;
+            break;
+        end
+
+        if f_i * f_ip1 < 0 || f_ip1 == 0
+            left_idx = i;
+            right_idx = i + 1;
+            break;
+        end
+    end
+
+    if ~isempty(left_idx)
+        sign_change_found = true;
+        scan_used.r_scan = r_scan;
+        scan_used.A_scan = A_scan;
+        scan_used.r_model_scan = r_model_scan;
+        scan_used.r_gross_scan = r_gross_scan;
+        scan_used.interval = [r_scan_low, r_scan_high];
+        scan_used.attempt = iscan;
         break;
     end
 end
 
-% Prepare history output with scan diagnostics.
-history.scan_r_annual = r_scan;
-history.scan_r_model_net = r_model_scan;
-history.scan_R_model_gross = r_gross_scan;
-history.scan_asset_demand = A_scan;
+% Prepare summary scan diagnostics on the scan used (or last attempted).
+if sign_change_found
+    history.scan_r_annual = scan_used.r_scan;
+    history.scan_r_model_net = scan_used.r_model_scan;
+    history.scan_R_model_gross = scan_used.r_gross_scan;
+    history.scan_asset_demand = scan_used.A_scan;
+else
+    % Last available scan attempt
+    last_scan = history.scan_attempts{find(~cellfun(@isempty, history.scan_attempts), 1, 'last')};
+    history.scan_r_annual = last_scan.r_annual;
+    history.scan_r_model_net = last_scan.r_model_net;
+    history.scan_R_model_gross = last_scan.R_model_gross;
+    history.scan_asset_demand = last_scan.asset_demand;
+end
 
-if isempty(left_idx)
+if ~sign_change_found
     % 3) No sign change found: do not fail hard; return clear diagnostics.
     eq_res = struct();
     eq_res.converged = false;
@@ -78,21 +138,22 @@ if isempty(left_idx)
     eq_res.sign_change_found = false;
     eq_res.bracket_initial = [initial_r_low, initial_r_high];
     eq_res.bracket_used = [NaN, NaN];
-    eq_res.scan_r_annual = r_scan;
-    eq_res.scan_r_model_net = r_model_scan;
-    eq_res.scan_R_model_gross = r_gross_scan;
-    eq_res.scan_asset_demand = A_scan;
+    eq_res.scan_r_annual = history.scan_r_annual;
+    eq_res.scan_r_model_net = history.scan_r_model_net;
+    eq_res.scan_R_model_gross = history.scan_R_model_gross;
+    eq_res.scan_asset_demand = history.scan_asset_demand;
 
-    if all(A_scan > 0)
+    if all(eq_res.scan_asset_demand > 0)
         eq_res.message = 'No sign change: A(r) is strictly positive on tested interval.';
-    elseif all(A_scan < 0)
+    elseif all(eq_res.scan_asset_demand < 0)
         eq_res.message = 'No sign change: A(r) is strictly negative on tested interval.';
     else
         eq_res.message = 'No adjacent sign change detected on scan grid (possible near-zero/touching case).';
     end
 
     fprintf('\n%s\n', eq_res.message);
-    fprintf('Tested annual interval: [%.4f%%, %.4f%%]\n', 100 * r_low, 100 * r_high);
+    fprintf('Final tested annual interval: [%.4f%%, %.4f%%]\n', ...
+        100 * history.scan_r_annual(1), 100 * history.scan_r_annual(end));
     fprintf('Bisection skipped. Consider widening interval or refining scan grid.\n\n');
 
     history.r_annual = [];
@@ -105,17 +166,17 @@ end
 % 4) Use detected sign-change pair as bisection bracket.
 if left_idx == right_idx
     % Exact grid root found.
-    [eq_res, ~] = evaluate_rate(r_scan(left_idx), params, V_guess);
+    [eq_res, ~] = evaluate_rate(scan_used.r_scan(left_idx), params, V_guess);
     eq_res.converged = true;
     eq_res.bisect_iter = 0;
     eq_res.message = 'Exact zero found on pre-bisection grid.';
     eq_res.sign_change_found = true;
     eq_res.bracket_initial = [initial_r_low, initial_r_high];
-    eq_res.bracket_used = [r_scan(left_idx), r_scan(left_idx)];
-    eq_res.scan_r_annual = r_scan;
-    eq_res.scan_r_model_net = r_model_scan;
-    eq_res.scan_R_model_gross = r_gross_scan;
-    eq_res.scan_asset_demand = A_scan;
+    eq_res.bracket_used = [scan_used.r_scan(left_idx), scan_used.r_scan(left_idx)];
+    eq_res.scan_r_annual = scan_used.r_scan;
+    eq_res.scan_r_model_net = scan_used.r_model_scan;
+    eq_res.scan_R_model_gross = scan_used.r_gross_scan;
+    eq_res.scan_asset_demand = scan_used.A_scan;
 
     fprintf('\n%s\n', eq_res.message);
     fprintf('Equilibrium annual rate: %.5f%%\n', 100 * eq_res.r_annual);
@@ -129,8 +190,8 @@ if left_idx == right_idx
     return;
 end
 
-r_low = r_scan(left_idx);
-r_high = r_scan(right_idx);
+r_low = scan_used.r_scan(left_idx);
+r_high = scan_used.r_scan(right_idx);
 fprintf('\nAuto-selected bisection bracket from scan: [%.5f%%, %.5f%%]\n', 100 * r_low, 100 * r_high);
 
 [res_low, V_low] = evaluate_rate(r_low, params, []);
@@ -197,10 +258,10 @@ end
 eq_res.sign_change_found = true;
 eq_res.bracket_initial = [initial_r_low, initial_r_high];
 eq_res.bracket_used = [history.bracket_low(end), history.bracket_high(end)];
-eq_res.scan_r_annual = r_scan;
-eq_res.scan_r_model_net = r_model_scan;
-eq_res.scan_R_model_gross = r_gross_scan;
-eq_res.scan_asset_demand = A_scan;
+eq_res.scan_r_annual = scan_used.r_scan;
+eq_res.scan_r_model_net = scan_used.r_model_scan;
+eq_res.scan_R_model_gross = scan_used.r_gross_scan;
+eq_res.scan_asset_demand = scan_used.A_scan;
 
 % Trim history vectors to used length
 n_used = eq_res.bisect_iter;
