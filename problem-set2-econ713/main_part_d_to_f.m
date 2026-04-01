@@ -42,6 +42,7 @@ for ir = 1:length(r_grid_annual)
     fprintf('Aggregate assets: %+ .6e\n', asset_demand(ir));
 end
 
+
 %% Part (f): Solve equilibrium rate by bisection
 fprintf('\n========== PART (f): Endogenous equilibrium r ==========\n');
 tol_assets = 1e-5;
@@ -77,4 +78,3 @@ fprintf('\nSaved baseline objects to baseline_equilibrium.mat\n');
 fprintf('Saved figures:\n');
 fprintf('  asset_demand_curve.png\n');
 fprintf('  stationary_asset_distribution_equilibrium.png\n');
-
