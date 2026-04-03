@@ -81,9 +81,9 @@ if ok0 && ok_phi6 && ok_sig3
     plot_mpc_distributions(mpc0(:), res0.psi_vec(:), mpc_phi6(:), res_phi6.psi_vec(:), mpc_sig3(:), res_sig3.psi_vec(:), save_dir);
 
     fprintf('\n================ PART (i): MPC Moments ================\n');
-    fprintf('Baseline weighted mean MPC: %.4f\n', sum(mpc0(:) .* res0.psi_vec(:)));
-    fprintf('phi = 6 weighted mean MPC: %.4f\n', sum(mpc_phi6(:) .* res_phi6.psi_vec(:)));
-    fprintf('sigma = 3 weighted mean MPC: %.4f\n', sum(mpc_sig3(:) .* res_sig3.psi_vec(:)));
+    print_mpc_diagnostics('Baseline', mpc0, res0.psi_vec, params0.A, params0.phi);
+    print_mpc_diagnostics('phi = 6', mpc_phi6, res_phi6.psi_vec, params_phi6.A, params_phi6.phi);
+    print_mpc_diagnostics('sigma = 3', mpc_sig3, res_sig3.psi_vec, params_sig3.A, params_sig3.phi);
     fprintf('=======================================================\n');
 else
     fprintf('\nSkipping PART (i): needs converged baseline, phi=6, and sigma=3 cases.\n');
@@ -139,5 +139,28 @@ fprintf('  Aggregate assets residual: %+ .6e\n', res.agg_assets_policy);
 fprintf('  Mean assets: %.6f\n', mean_a);
 fprintf('  Std assets: %.6f\n', std_a);
 fprintf('  Mass at borrowing constraint: %.6f\n', mass_borrow);
+
+end
+
+function print_mpc_diagnostics(label, mpc, psi_vec, A, phi)
+% Print MPC diagnostics requested for auditing part (i).
+
+N_a = length(A);
+N_y = size(mpc, 2);
+
+weighted_mean = sum(mpc(:) .* psi_vec(:));
+min_mpc = min(mpc(:));
+max_mpc = max(mpc(:));
+
+[~, ia_bc] = min(abs(A + phi));   % borrowing-constraint location a = -phi
+
+fprintf('\n[%s MPC diagnostics]\n', label);
+fprintf('  min MPC: %.6f\n', min_mpc);
+fprintf('  max MPC: %.6f\n', max_mpc);
+fprintf('  mean weighted MPC: %.6f\n', weighted_mean);
+
+for iy = 1:N_y
+    fprintf('  MPC at borrowing constraint (income state %d): %.6f\n', iy, mpc(ia_bc, iy));
+end
 
 end

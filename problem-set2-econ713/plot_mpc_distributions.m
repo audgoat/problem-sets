@@ -6,7 +6,10 @@ if nargin < 7
     save_dir = pwd;
 end
 
-edges = linspace(0, 1.2, 50);
+% Use finer binning in the low-MPC region where most mass typically sits.
+edges_low = linspace(0, 0.2, 81);       % dense bins in [0, 0.2]
+edges_high = linspace(0.205, 1.2, 31);  % coarser bins above 0.2
+edges = [edges_low, edges_high];
 centers = 0.5 * (edges(1:end-1) + edges(2:end));
 
 % Weighted histogram masses computed manually for compatibility:
@@ -17,25 +20,67 @@ h1 = weighted_bin_masses(mpc1, w1, edges);
 h2 = weighted_bin_masses(mpc2, w2, edges);
 h3 = weighted_bin_masses(mpc3, w3, edges);
 
+% Weighted means (ignoring NaNs safely)
+m1 = sum(mpc1 .* w1) / sum(w1);
+m2 = sum(mpc2 .* w2) / sum(w2);
+m3 = sum(mpc3 .* w3) / sum(w3);
+
 fig = figure('Color', 'w');
 hold on;
 
-plot(centers, h1, 'LineWidth', 2.0, 'Color', [0.10 0.35 0.75]);
-plot(centers, h2, 'LineWidth', 2.0, 'Color', [0.85 0.33 0.10]);
-plot(centers, h3, 'LineWidth', 2.0, 'Color', [0.20 0.60 0.20]);
+h1_line = plot(centers, h1, 'LineWidth', 2.0, 'Color', [0.10 0.35 0.75]);
+h2_line = plot(centers, h2, 'LineWidth', 2.0, 'Color', [0.85 0.33 0.10]);
+h3_line = plot(centers, h3, 'LineWidth', 2.0, 'Color', [0.20 0.60 0.20]);
+
+% Mark weighted means on the histogram curves
+y1m = interp_value(m1, centers(:), h1(:));
+y2m = interp_value(m2, centers(:), h2(:));
+y3m = interp_value(m3, centers(:), h3(:));
+plot(m1, y1m, 'o', 'MarkerSize', 7, 'MarkerFaceColor', [0.10 0.35 0.75], 'MarkerEdgeColor', 'k');
+plot(m2, y2m, 's', 'MarkerSize', 7, 'MarkerFaceColor', [0.85 0.33 0.10], 'MarkerEdgeColor', 'k');
+plot(m3, y3m, '^', 'MarkerSize', 7, 'MarkerFaceColor', [0.20 0.60 0.20], 'MarkerEdgeColor', 'k');
 
 xlabel('MPC', 'FontSize', 12);
 ylabel('Weighted cross-sectional probability', 'FontSize', 12);
 title('Cross-Sectional MPC Distributions', 'FontSize', 13);
-legend({'Baseline', '\phi = 6', '\sigma = 3'}, 'Location', 'best');
+legend([h1_line, h2_line, h3_line], {'Baseline', '\phi = 6', '\sigma = 3'}, 'Location', 'best');
+xlim([0, 0.2]);
 grid on;
 box on;
 set(gca, 'FontSize', 11, 'LineWidth', 1);
+
+text(0.98, 0.95, sprintf('Weighted means: %.3f, %.3f, %.3f', m1, m2, m3), ...
+    'Units', 'normalized', 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top', ...
+    'FontSize', 10, 'BackgroundColor', 'w');
 
 hold off;
 
 saveas(fig, fullfile(save_dir, 'mpc_distribution_comparison.png'));
 saveas(fig, fullfile(save_dir, 'mpc_distribution_comparison.pdf'));
+
+% Optional second figure: weighted CDFs
+cdf1 = cumsum(h1);
+cdf2 = cumsum(h2);
+cdf3 = cumsum(h3);
+
+fig_cdf = figure('Color', 'w');
+hold on;
+plot(centers, cdf1, 'LineWidth', 2.0, 'Color', [0.10 0.35 0.75]);
+plot(centers, cdf2, 'LineWidth', 2.0, 'Color', [0.85 0.33 0.10]);
+plot(centers, cdf3, 'LineWidth', 2.0, 'Color', [0.20 0.60 0.20]);
+xlabel('MPC', 'FontSize', 12);
+ylabel('Weighted CDF', 'FontSize', 12);
+title('Weighted CDF of MPCs', 'FontSize', 13);
+legend({'Baseline', '\phi = 6', '\sigma = 3'}, 'Location', 'best');
+xlim([0, 0.2]);
+ylim([0, 1]);
+grid on;
+box on;
+set(gca, 'FontSize', 11, 'LineWidth', 1);
+hold off;
+
+saveas(fig_cdf, fullfile(save_dir, 'mpc_cdf_comparison.png'));
+saveas(fig_cdf, fullfile(save_dir, 'mpc_cdf_comparison.pdf'));
 
 end
 
@@ -55,6 +100,30 @@ w = w(valid);
 
 if isempty(x)
     return;
+end
+
+function m = weighted_mean(x, w)
+% weighted_mean
+% Weighted mean with safe NaN handling.
+
+x = x(:);
+w = w(:);
+valid = ~isnan(x) & ~isnan(w);
+x = x(valid);
+w = w(valid);
+
+if isempty(x)
+    m = NaN;
+    return;
+end
+
+wsum = sum(w);
+if wsum <= 0
+    m = NaN;
+else
+    m = sum(x .* w) / wsum;
+end
+
 end
 
 bin_idx = discretize(x, edges);
